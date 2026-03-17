@@ -1,5 +1,5 @@
 import {type RequestParameters, makeRequest, sameOrigin, type GetResourceResponse} from './ajax';
-import {arrayBufferToImageBitmap, arrayBufferToImage, extend, isWorker, isImageBitmap} from './util';
+import {arrayBufferToImageBitmap, arrayBufferToImage, extend, isWorker, isImageBitmap, isSafari} from './util';
 import {webpSupported} from './webp_supported';
 import {config} from './config';
 import {createAbortError} from './abort_error';
@@ -105,12 +105,12 @@ export namespace ImageRequest {
      * @param supportImageRefresh - `true`, if the image request need to support refresh based on cache headers.
      * @returns - A promise resolved when the image is loaded.
      */
-    export const getImage = (
+    export function getImage(
         requestParameters: RequestParameters,
         abortController: AbortController,
         supportImageRefresh: boolean = true,
         imageBitmapOptions?: ImageBitmapOptions
-    ): Promise<GetResourceResponse<HTMLImageElement | ImageBitmap | null>> => {
+    ): Promise<GetResourceResponse<HTMLImageElement | ImageBitmap | null>> {
         return new Promise<GetResourceResponse<HTMLImageElement | ImageBitmap | null>>((resolve, reject) => {
             if (webpSupported.supported) {
                 if (!requestParameters.headers) {
@@ -136,15 +136,23 @@ export namespace ImageRequest {
             imageRequestQueue.push(request);
             processQueue();
         });
-    };
+    }
 
-    const arrayBufferToCanvasImageSource = (data: ArrayBuffer, imageBitmapOptions?: ImageBitmapOptions): Promise<HTMLImageElement | ImageBitmap | null> => {
+    const arrayBufferToCanvasImageSource = (
+        data: ArrayBuffer,
+        contentType?: string | null,
+        imageBitmapOptions?: ImageBitmapOptions
+    ): Promise<HTMLImageElement | ImageBitmap | null> => {
+        const needsRawPixels = imageBitmapOptions?.premultiplyAlpha === 'none';
+        const useSafariHtmlImageFallback = needsRawPixels && !isWorker(self) && isSafari(globalThis);
         const imageBitmapSupported = typeof createImageBitmap === 'function';
-        if (imageBitmapSupported) {
-            return arrayBufferToImageBitmap(data, imageBitmapOptions);
-        } else {
-            return arrayBufferToImage(data);
+        if (useSafariHtmlImageFallback) {
+            return arrayBufferToImage(data, contentType);
         }
+        if (imageBitmapSupported) {
+            return arrayBufferToImageBitmap(data, imageBitmapOptions, contentType);
+        }
+        return arrayBufferToImage(data, contentType);
     };
 
     const doImageRequest = async (itemInQueue: ImageRequestQueueItem) => {
@@ -181,8 +189,14 @@ export namespace ImageRequest {
                 // If HtmlImageElement is used to get image then response type will be HTMLImageElement
                 onSuccess(response as GetResourceResponse<HTMLImageElement | ImageBitmap | null>);
             } else if (response.data) {
-                const img = await arrayBufferToCanvasImageSource(response.data, imageBitmapOptions);
-                onSuccess({data: img, cacheControl: response.cacheControl, expires: response.expires});
+                const img = await arrayBufferToCanvasImageSource(response.data, response.contentType, imageBitmapOptions);
+                onSuccess({
+                    data: img,
+                    cacheControl: response.cacheControl,
+                    expires: response.expires,
+                    etag: response.etag,
+                    contentType: response.contentType
+                });
             }
         } catch (err) {
             delete itemInQueue.abortController;
