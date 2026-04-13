@@ -41,7 +41,7 @@
     "tinyqueue": "^3.0.0"
   },
   "devDependencies": {
-    "@mapbox/mapbox-gl-rtl-text": "^0.3.0",
+    "@mapbox/mapbox-gl-rtl-text": "^0.4.0",
     "@mapbox/mvt-fixtures": "^3.10.0",
     "@rollup/plugin-commonjs": "^28.0.8",
     "@rollup/plugin-json": "^6.1.0",
